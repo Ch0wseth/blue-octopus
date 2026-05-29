@@ -6,7 +6,7 @@
             <openid-config url="https://login.microsoftonline.com/${tenant-id}/v2.0/.well-known/openid-configuration" />
             <audiences>
                 <audience>https://management.azure.com</audience>
-                <!-- Add additional audiences if needed -->
+                <audience>https://ai.azure.com</audience>
             </audiences>
             <issuers>
                 <issuer>https://sts.windows.net/${tenant-id}/</issuer>
@@ -59,6 +59,13 @@
         </llm-emit-token-metric>
         <!-- Set the backend service to the Foundry model gateway -->
         <set-backend-service backend-id="${foundry_backend_name}" />
+        <!-- Token rate limiting per Foundry project managed identity -->
+        <llm-token-limit counter-key="${identity_dev_client_id}"
+            tokens-per-minute="${tokens_per_minute_dev}" estimate-prompt-tokens="false" remaining-tokens-variable-name="remainingTokens">
+        </llm-token-limit>
+        <llm-token-limit counter-key="${identity_com_client_id}"
+            tokens-per-minute="${tokens_per_minute_com}" estimate-prompt-tokens="false" remaining-tokens-variable-name="remainingTokens">
+        </llm-token-limit>
         <!-- Remove api-key header, as Foundry model does not need it -->
         <set-header name="api-key" exists-action="delete" />
         <!-- Check if the request is a streaming request by looking for "stream" property in the JSON body -->

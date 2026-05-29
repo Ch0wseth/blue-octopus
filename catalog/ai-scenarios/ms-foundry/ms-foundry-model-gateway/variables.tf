@@ -73,3 +73,21 @@ variable "apim_subnet_address_suffix" {
   description = "APIM Subnet Address Suffix"
   default     = ".2.0/24"
 }
+
+variable "tokens_per_minute" {
+  type        = number
+  description = "Token rate limit per minute per consumer (app-id)"
+  default     = 10000
+}
+
+variable "tokens_per_minute_dev" {
+  type        = number
+  description = "Token rate limit per minute for dev project identity"
+  default     = 500
+}
+
+variable "tokens_per_minute_com" {
+  type        = number
+  description = "Token rate limit per minute for common project identity"
+  default     = 5000
+}
