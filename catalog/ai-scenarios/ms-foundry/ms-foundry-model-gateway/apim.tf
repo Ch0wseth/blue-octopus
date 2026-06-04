@@ -105,7 +105,7 @@ resource "azapi_resource" "conn_ai_gateway" {
       isSharedToAll = false
       target        = format("%s/%s", trimsuffix(azurerm_api_management.this.gateway_url, "/"), azurerm_api_management_api.ms_foundry_azure_ai.path)
       credentials = {
-        key = azurerm_api_management_subscription.ms_foundry_azure_ai.primary_key
+        key = data.azapi_resource_action.apim_builtin_subscription_keys.output.primaryKey
       }
       metadata = {
         ApiType             = "Azure"

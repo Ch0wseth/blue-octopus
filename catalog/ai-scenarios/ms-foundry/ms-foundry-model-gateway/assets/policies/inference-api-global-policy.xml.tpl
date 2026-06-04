@@ -1,22 +1,28 @@
 <policies>
     <inbound>
         <base />
-        <!-- Validate JWT token issued by Microsoft Entra ID -->
-        <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized. Valid JWT token required." require-expiration-time="true" require-scheme="Bearer" require-signed-tokens="true" output-token-variable-name="jwt">
-            <openid-config url="https://login.microsoftonline.com/${tenant-id}/v2.0/.well-known/openid-configuration" />
-            <audiences>
-                <audience>https://management.azure.com</audience>
-                <audience>https://ai.azure.com</audience>
-            </audiences>
-            <issuers>
-                <issuer>https://sts.windows.net/${tenant-id}/</issuer>
-                <issuer>https://login.microsoftonline.com/${tenant-id}/v2.0</issuer>
-            </issuers>
-        </validate-jwt>
+        <!-- Validate JWT token issued by Microsoft Entra ID (only if Authorization header is present) -->
+        <choose>
+            <when condition="@(context.Request.Headers.ContainsKey(&quot;Authorization&quot;))">
+                <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized. Valid JWT token required." require-expiration-time="true" require-scheme="Bearer" require-signed-tokens="true" output-token-variable-name="jwt">
+                    <openid-config url="https://login.microsoftonline.com/${tenant-id}/v2.0/.well-known/openid-configuration" />
+                    <audiences>
+                        <audience>https://management.azure.com</audience>
+                        <audience>https://ai.azure.com</audience>
+                        <audience>https://cognitiveservices.azure.com</audience>
+                    </audiences>
+                    <issuers>
+                        <issuer>https://sts.windows.net/${tenant-id}/</issuer>
+                        <issuer>https://login.microsoftonline.com/${tenant-id}/v2.0</issuer>
+                    </issuers>
+                </validate-jwt>
+            </when>
+        </choose>
 
         <!-- Extract username and app id from the JWT token for telemetry -->
         <set-variable name="username" value="@{
             try {
+                if (!context.Variables.ContainsKey("jwt")) { return "api-key-user"; }
                 Jwt jwt = (Jwt)context.Variables["jwt"];
                 if (jwt.Claims.ContainsKey("upn") && jwt.Claims["upn"].Count() > 0) {
                     return jwt.Claims["upn"][0];
@@ -38,6 +44,7 @@
         }" />
         <set-variable name="app-id" value="@{
             try {
+                if (!context.Variables.ContainsKey("jwt")) { return context.Subscription.Id; }
                 Jwt jwt = (Jwt)context.Variables["jwt"];
                 return jwt.Claims.ContainsKey("appid") ? jwt.Claims["appid"][0] : "unknown";
             }
@@ -57,15 +64,33 @@
             <dimension name="Client IP" value="@(context.Request.IpAddress)" />
             <dimension name="app_id" value="@((string)context.Variables["app-id"])" />
         </llm-emit-token-metric>
-        <!-- Set the backend service to the Foundry model gateway -->
-        <set-backend-service backend-id="${foundry_backend_name}" />
-        <!-- Token rate limiting per Foundry project managed identity -->
-        <llm-token-limit counter-key="${identity_dev_client_id}"
-            tokens-per-minute="${tokens_per_minute_dev}" estimate-prompt-tokens="false" remaining-tokens-variable-name="remainingTokens">
-        </llm-token-limit>
-        <llm-token-limit counter-key="${identity_com_client_id}"
-            tokens-per-minute="${tokens_per_minute_com}" estimate-prompt-tokens="false" remaining-tokens-variable-name="remainingTokens">
-        </llm-token-limit>
+        <!-- Route to correct backend based on path type -->
+        <choose>
+            <!-- OpenAI-style calls (e.g. /deployments/{model}/chat/completions from Agent SDK) -->
+            <when condition="@(context.Request.Url.Path.Contains("/deployments/"))">
+                <set-backend-service base-url="${foundry_openai_backend_url}" />
+                <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+            </when>
+            <!-- Model Inference API calls (e.g. /chat/completions from main.py) -->
+            <otherwise>
+                <set-backend-service backend-id="${foundry_backend_name}" />
+            </otherwise>
+        </choose>
+        <!-- Token rate limiting per application identity (from JWT appid) -->
+        <choose>
+            <!-- Projet Agent (managed identity) -->
+            <when condition="@((string)context.Variables[&quot;app-id&quot;] == &quot;${identity_dev_client_id}&quot;)">
+                <llm-token-limit counter-key="@((string)context.Variables[&quot;app-id&quot;])"
+                    tokens-per-minute="${tokens_per_minute_dev}" estimate-prompt-tokens="false" remaining-tokens-variable-name="remainingTokens">
+                </llm-token-limit>
+            </when>
+            <!-- Autres appelants (main.py, etc.) -->
+            <otherwise>
+                <llm-token-limit counter-key="@((string)context.Variables[&quot;app-id&quot;])"
+                    tokens-per-minute="${tokens_per_minute_com}" estimate-prompt-tokens="false" remaining-tokens-variable-name="remainingTokens">
+                </llm-token-limit>
+            </otherwise>
+        </choose>
         <!-- Remove api-key header, as Foundry model does not need it -->
         <set-header name="api-key" exists-action="delete" />
         <!-- Check if the request is a streaming request by looking for "stream" property in the JSON body -->

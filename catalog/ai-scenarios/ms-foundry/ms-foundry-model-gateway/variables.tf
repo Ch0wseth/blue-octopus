@@ -82,12 +82,12 @@ variable "tokens_per_minute" {
 
 variable "tokens_per_minute_dev" {
   type        = number
-  description = "Token rate limit per minute for dev project identity"
-  default     = 500
+  description = "Token rate limit per minute for agent project identity"
+  default     = 1000
 }
 
 variable "tokens_per_minute_com" {
   type        = number
-  description = "Token rate limit per minute for common project identity"
-  default     = 5000
+  description = "Token rate limit per minute for other callers (main.py, etc.)"
+  default     = 500
 }

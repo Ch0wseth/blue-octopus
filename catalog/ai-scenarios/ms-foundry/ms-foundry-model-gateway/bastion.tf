@@ -69,7 +69,7 @@ resource "azurerm_linux_virtual_machine" "this" {
   computer_name       = format("vm-%s", random_id.resource_group_name_suffix.hex)
   location            = local.resource_group_location
   resource_group_name = local.resource_group_name
-  size                = "Standard_D2ads_v5"
+  size                = "Standard_B2s"
   admin_username      = "azureuser"
   admin_password      = "P@ssw0rd1234!"
   disable_password_authentication = false
@@ -110,7 +110,16 @@ resource "azurerm_virtual_machine_extension" "vm_extension_linux" {
   type_handler_version = "2.1"
   settings             = <<SETTINGS
     {
-      "script": "${filebase64("${path.module}/assets/scripts/jumpbox-setup-cli-tools.sh")}"
+      "script": "${base64encode(templatefile("${path.module}/assets/scripts/jumpbox-setup-cli-tools.sh.tpl", {
+        apim_gateway_url         = trimsuffix(azurerm_api_management.this.gateway_url, "/")
+        apim_subscription_key    = azurerm_api_management_subscription.ms_foundry_azure_ai.primary_key
+        foundry_project_endpoint = "https://${format("aif2-%s", local.resource_suffix_kebabcase)}.services.ai.azure.com/api/projects/${format("prj-%s", local.resource_suffix_kebabcase)}"
+      }))}"
     }
 SETTINGS
+
+  depends_on = [
+    azurerm_api_management_subscription.ms_foundry_azure_ai,
+    azapi_resource.ms_foundry_project,
+  ]
 }
